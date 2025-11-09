@@ -152,14 +152,14 @@ void UpdateGame() {
         bool spawnMoney = (rand() % 100) < (MONEY_SPAWN_CHANCE * 100);
         
         if (spawnMoney) {
-            // Спавним деньги
+            // Спавним деньги (РАЗМЕР ИЗМЕНЕН: 23, 13 вместо 35, 20)
             Bonus newBonus;
             if (shelf.isLeft) {
                 newBonus.position = {shelf.startPos.x + 25, shelf.startPos.y - 70};
             } else {
                 newBonus.position = {shelf.startPos.x - 25, shelf.startPos.y - 70};
             }
-            newBonus.rect = {newBonus.position.x, newBonus.position.y, 35, 20}; // Размер для денег
+            newBonus.rect = {newBonus.position.x, newBonus.position.y, 23, 13}; // Размер для денег
             newBonus.velocity = {0, 0};
             newBonus.active = true;
             newBonus.onShelf = true;
@@ -350,11 +350,11 @@ void DrawGame() {
         }
     }
 
-    // Рисуем деньги
+    // Рисуем деньги (МАСШТАБ ИЗМЕНЕН: 0.1f вместо 0.15f)
     for (const auto& bonus : bonuses) {
         if (bonus.active) {
             if (moneyTexture.id != 0) {
-                float moneyScale = 0.15f;
+                float moneyScale = 0.1f;
                 float scaledWidth = moneyTexture.width * moneyScale;
                 float scaledHeight = moneyTexture.height * moneyScale;
                 float offsetX = (bonus.rect.width - scaledWidth) / 2;
