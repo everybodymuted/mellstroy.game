@@ -32,6 +32,7 @@ void LoadAudio() {
     
     if (backgroundMusic.ctxData != NULL) {
         SetMusicVolume(backgroundMusic, 0.5f);
+        PlayMusicStream(backgroundMusic);
         TraceLog(LOG_INFO, "Background music loaded successfully");
     } else {
         TraceLog(LOG_WARNING, "Failed to load background music");

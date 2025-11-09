@@ -20,10 +20,7 @@ int main() {
 
     LoadHighScores();
 
-    // Запуск фоновой музыки
-    if (backgroundMusic.ctxData != NULL) {
-        PlayMusicStream(backgroundMusic);
-    }
+    
 
     while (!WindowShouldClose() && state != EXIT) {
         // Обновляем музыку
