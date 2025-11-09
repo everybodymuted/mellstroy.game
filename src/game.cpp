@@ -82,26 +82,37 @@ void InitGame() {
     bonuses.clear();
     shelves.clear();
     
-    // ВОЗВРАЩАЕМ СТАРЫЕ ПОЛКИ КАК РАБОТАЛИ
+    // ПОЛКИ КОРОЧЕ И БЛИЖЕ К КРАЯМ
+    float shelfLength = 150.0f; // Было 200, стало 180 (на 10% короче)
+    float margin = 0.1f; // Отступ от краев
+    
+    // Левые полки начинаются от самого края
     shelves.push_back({
-        {50, 150, 200, 10}, {50, 150}, {250, 250},
+        {margin, 150, shelfLength, 10},           // Ближе к левому краю
+        {margin, 150}, 
+        {margin + shelfLength, 250},              // Конец полки
         45.0f * 3.14159f / 180.0f, 280.0f, true
     });
     
     shelves.push_back({
-        {50, 300, 200, 10}, {50, 300}, {250, 400},
+        {margin, 300, shelfLength, 10},           // Ближе к левому краю
+        {margin, 300},
+        {margin + shelfLength, 400},
         45.0f * 3.14159f / 180.0f, 280.0f, true
     });
     
+    // Правые полки начинаются от правого края
     shelves.push_back({
-        {SCREEN_WIDTH - 250, 150, 200, 10},
-        {SCREEN_WIDTH - 50, 150}, {SCREEN_WIDTH - 250, 250},
+        {SCREEN_WIDTH - margin - shelfLength, 150, shelfLength, 10},  // Ближе к правому краю
+        {SCREEN_WIDTH - margin, 150}, 
+        {SCREEN_WIDTH - margin - shelfLength, 250},
         -45.0f * 3.14159f / 180.0f, 280.0f, false
     });
     
     shelves.push_back({
-        {SCREEN_WIDTH - 250, 300, 200, 10},
-        {SCREEN_WIDTH - 50, 300}, {SCREEN_WIDTH - 250, 400},
+        {SCREEN_WIDTH - margin - shelfLength, 300, shelfLength, 10},  // Ближе к правому краю
+        {SCREEN_WIDTH - margin, 300},
+        {SCREEN_WIDTH - margin - shelfLength, 400},
         -45.0f * 3.14159f / 180.0f, 280.0f, false
     });
 
