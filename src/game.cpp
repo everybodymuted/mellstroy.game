@@ -467,6 +467,29 @@ void DrawGameOver() {
 
     DrawText(TextFormat("FINAL SCORE: %d", player.score), 210, 450, 40, WHITE);
     
+    // ОБНОВЛЯЕМ РЕКОРДЫ (ИСПРАВЛЕННАЯ ЛОГИКА)
+    bool isNewHighScore = false;
+    int newScore = player.score;
+    
+    // Проверяем, попадает ли счет в таблицу рекордов
+    for (int i = 0; i < 5; i++) {
+        if (newScore > highScores[i]) {
+            isNewHighScore = true;
+            // Сдвигаем рекорды вниз, начиная с конца
+            for (int j = 4; j > i; j--) {
+                highScores[j] = highScores[j-1];
+            }
+            // Вставляем новый рекорд на правильную позицию
+            highScores[i] = newScore;
+            break; // ВАЖНО: выходим после вставки
+        }
+    }
+    
+    if (isNewHighScore) {
+        DrawText("NEW HIGH SCORE!", 250, 400, 30, YELLOW);
+        SaveHighScores(); // Сохраняем новые рекорды
+    }
+    
     DrawText("SPACE to restart", 230, 500, 30, WHITE);
     DrawText("ESC to exit", 275, 540, 30, WHITE);
 
