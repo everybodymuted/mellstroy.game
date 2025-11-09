@@ -8,7 +8,7 @@ Texture2D eggTexture;
 Texture2D shelfTexture;
 Texture2D heartTexture;
 Texture2D gameOverTexture;
-Texture2D moneyTexture;  // Новая текстура для денег
+Texture2D moneyTexture;
 
 // Музыка
 Music backgroundMusic;
@@ -16,10 +16,14 @@ Music backgroundMusic;
 int highScores[5] = {0};
 Player player;
 std::vector<Egg> eggs;
-std::vector<Bonus> bonuses;  // Новый вектор для бонусов
+std::vector<Bonus> bonuses;
 std::vector<Shelf> shelves;
 float eggSpawnTimer = 0.0f;
-const float MONEY_SPAWN_CHANCE = 0.2f; // 20% шанс появления денег
+const float MONEY_SPAWN_CHANCE = 0.2f;
+float currentSpawnTime = EGG_SPAWN_TIME;
+int lastSpeedUpScore = 0;
+int itemsSinceLastMoney = 0; // Счетчик предметов с последнего спавна денег
+const int MONEY_SPAWN_INTERVAL = 7; // Максимум 1 деньги за 7 предметов
 
 // Функция загрузки аудио
 void LoadAudio() {
@@ -82,20 +86,25 @@ void InitGame() {
     bonuses.clear();
     shelves.clear();
     
+    // Сбрасываем время спавна и счетчики
+    currentSpawnTime = EGG_SPAWN_TIME;
+    lastSpeedUpScore = 0;
+    itemsSinceLastMoney = 0; // Сбрасываем счетчик денег
+    
     // ПОЛКИ КОРОЧЕ И БЛИЖЕ К КРАЯМ
-    float shelfLength = 150.0f; // Было 200, стало 180 (на 10% короче)
-    float margin = 0.1f; // Отступ от краев
+    float shelfLength = 150.0f;
+    float margin = 0.1f;
     
     // Левые полки начинаются от самого края
     shelves.push_back({
-        {margin, 150, shelfLength, 10},           // Ближе к левому краю
+        {margin, 150, shelfLength, 10},
         {margin, 150}, 
-        {margin + shelfLength, 250},              // Конец полки
+        {margin + shelfLength, 250},
         45.0f * 3.14159f / 180.0f, 280.0f, true
     });
     
     shelves.push_back({
-        {margin, 300, shelfLength, 10},           // Ближе к левому краю
+        {margin, 300, shelfLength, 10},
         {margin, 300},
         {margin + shelfLength, 400},
         45.0f * 3.14159f / 180.0f, 280.0f, true
@@ -103,14 +112,14 @@ void InitGame() {
     
     // Правые полки начинаются от правого края
     shelves.push_back({
-        {SCREEN_WIDTH - margin - shelfLength, 150, shelfLength, 10},  // Ближе к правому краю
+        {SCREEN_WIDTH - margin - shelfLength, 150, shelfLength, 10},
         {SCREEN_WIDTH - margin, 150}, 
         {SCREEN_WIDTH - margin - shelfLength, 250},
         -45.0f * 3.14159f / 180.0f, 280.0f, false
     });
     
     shelves.push_back({
-        {SCREEN_WIDTH - margin - shelfLength, 300, shelfLength, 10},  // Ближе к правому краю
+        {SCREEN_WIDTH - margin - shelfLength, 300, shelfLength, 10},
         {SCREEN_WIDTH - margin, 300},
         {SCREEN_WIDTH - margin - shelfLength, 400},
         -45.0f * 3.14159f / 180.0f, 280.0f, false
@@ -124,6 +133,16 @@ void UpdateGame() {
 
     // Обновляем музыку
     UpdateMusicStream(backgroundMusic);
+
+    // Проверяем ускорение спавна каждые 100 очков
+    if (player.score >= lastSpeedUpScore + 100) {
+        lastSpeedUpScore = player.score;
+        currentSpawnTime /= 1.3f;
+        if (currentSpawnTime < 0.3f) {
+            currentSpawnTime = 0.3f;
+        }
+        TraceLog(LOG_INFO, "Spawn speed increased! Current spawn time: %.2f", currentSpawnTime);
+    }
 
     // Движение игрока
     if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) {
@@ -142,24 +161,33 @@ void UpdateGame() {
     player.rect.y = player.position.y;
 
     eggSpawnTimer += deltaTime;
-    if (eggSpawnTimer >= EGG_SPAWN_TIME) {
+    if (eggSpawnTimer >= currentSpawnTime) {
         eggSpawnTimer = 0.0f;
         
         int shelfIndex = rand() % shelves.size();
         Shelf& shelf = shelves[shelfIndex];
         
-        // Рандомно решаем: слива или деньги
-        bool spawnMoney = (rand() % 100) < (MONEY_SPAWN_CHANCE * 100);
+        // Увеличиваем счетчик предметов
+        itemsSinceLastMoney++;
+        
+        // Решаем: слива или деньги (только если прошло достаточно предметов)
+        bool spawnMoney = false;
+        if (itemsSinceLastMoney >= MONEY_SPAWN_INTERVAL) {
+            spawnMoney = (rand() % 100) < (MONEY_SPAWN_CHANCE * 100);
+            if (spawnMoney) {
+                itemsSinceLastMoney = 0; // Сбрасываем счетчик при спавне денег
+            }
+        }
         
         if (spawnMoney) {
-            // Спавним деньги (РАЗМЕР ИЗМЕНЕН: 23, 13 вместо 35, 20)
+            // Спавним деньги
             Bonus newBonus;
             if (shelf.isLeft) {
                 newBonus.position = {shelf.startPos.x + 25, shelf.startPos.y - 70};
             } else {
                 newBonus.position = {shelf.startPos.x - 25, shelf.startPos.y - 70};
             }
-            newBonus.rect = {newBonus.position.x, newBonus.position.y, 23, 13}; // Размер для денег
+            newBonus.rect = {newBonus.position.x, newBonus.position.y, 23, 13};
             newBonus.velocity = {0, 0};
             newBonus.active = true;
             newBonus.onShelf = true;
@@ -247,7 +275,7 @@ void UpdateGame() {
         }
     }
 
-    // Обработка денег (такая же физика как у слив)
+    // Обработка денег
     for (auto& bonus : bonuses) {
         if (bonus.active) {
             if (bonus.onShelf) {
@@ -291,12 +319,11 @@ void UpdateGame() {
 
             if (CheckCollisionRecs(player.rect, bonus.rect)) {
                 bonus.active = false;
-                player.score += 50; // 5 раз больше очков (50 вместо 10)
+                player.score += 50;
             }
 
             if (bonus.position.y > SCREEN_HEIGHT) {
                 bonus.active = false;
-                // Деньги не отнимают жизни при падении
             }
         }
     }
@@ -314,6 +341,8 @@ void UpdateGame() {
         state = MENU;
     }
 }
+
+// ... остальные функции DrawShelf, DrawGame, DrawGameOver без изменений ...
 
 void DrawShelf(const Shelf& shelf) {
     DrawLineEx(shelf.startPos, shelf.endPos, 10.0f, BROWN);
@@ -388,6 +417,9 @@ void DrawGame() {
     // СЧЕТ ПО ЦЕНТРУ ВВЕРХУ
     int scoreTextWidth = MeasureText(TextFormat("Score: %d", player.score), 30);
     DrawText(TextFormat("Score: %d", player.score), (SCREEN_WIDTH - scoreTextWidth) / 2, 10, 30, DARKBLUE);
+
+    // Отображаем текущую скорость спавна (опционально)
+    DrawText(TextFormat("Spawn: %.1fs", currentSpawnTime), 10, SCREEN_HEIGHT - 30, 20, DARKBLUE);
 
     // ЖИЗНИ ПО ЦЕНТРУ ПОД СЧЕТОМ
     if (heartTexture.id != 0) {
