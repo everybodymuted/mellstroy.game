@@ -7,11 +7,12 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
-#include <cmath>  // Добавляем для математических функций
+#include <cmath>
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
 #define EGG_SPAWN_TIME 1.5f
+extern bool musicEnabled;
 
 enum GameState {
     MENU,
@@ -59,7 +60,6 @@ struct Shelf {
     bool isLeft;
 };
 
-// Глобальные переменные
 extern GameState state;
 extern Texture2D menuBackground;
 extern Texture2D playerTexture;
@@ -68,6 +68,7 @@ extern Texture2D shelfTexture;
 extern Texture2D heartTexture;
 extern Texture2D gameOverTexture;
 extern Texture2D moneyTexture;
+extern Texture2D gameBackground;
 
 extern Music backgroundMusic;
 
@@ -79,7 +80,6 @@ extern std::vector<Shelf> shelves;
 extern float eggSpawnTimer;
 extern const float MONEY_SPAWN_CHANCE;
 
-// Функции
 void LoadAudio();
 void UnloadAudio();
 void LoadHighScores();

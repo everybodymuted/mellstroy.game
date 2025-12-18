@@ -1,10 +1,11 @@
 #include "game.h"
+#include <cstdlib>
+#include <ctime>
 
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Catch the Eggs!");
     SetTargetFPS(60);
     
-    // Инициализация аудио
     InitAudioDevice();
     LoadAudio();
     
@@ -17,13 +18,13 @@ int main() {
     heartTexture = LoadTexture("resources/heart.png");
     gameOverTexture = LoadTexture("resources/game_over.png");
     moneyTexture = LoadTexture("resources/money.png");
+    
+    // Загрузка твоего личного фона
+    gameBackground = LoadTexture("resources/fon.jpg");
 
     LoadHighScores();
 
-    
-
     while (!WindowShouldClose() && state != EXIT) {
-        // Обновляем музыку
         if (backgroundMusic.ctxData != NULL) {
             UpdateMusicStream(backgroundMusic);
         }
@@ -49,7 +50,6 @@ int main() {
 
     SaveHighScores();
     
-    // Выгрузка ресурсов
     UnloadAudio();
     CloseAudioDevice();
     
@@ -60,6 +60,7 @@ int main() {
     if (gameOverTexture.id != 0) UnloadTexture(gameOverTexture);
     if (shelfTexture.id != 0) UnloadTexture(shelfTexture);
     if (moneyTexture.id != 0) UnloadTexture(moneyTexture);
+    UnloadTexture(gameBackground);  // Выгрузка твоего фона
     
     CloseWindow();
     return 0;

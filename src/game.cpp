@@ -1,67 +1,361 @@
 #include "game.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 
-// Инициализация глобальных переменных
 GameState state = MENU;
-Texture2D menuBackground;
-Texture2D playerTexture;
-Texture2D eggTexture;
-Texture2D shelfTexture;
-Texture2D heartTexture;
-Texture2D gameOverTexture;
-Texture2D moneyTexture;
+bool musicEnabled = true; // Добавлено
 
-// Музыка
+Texture2D menuBackground, playerTexture, eggTexture, shelfTexture;
+Texture2D heartTexture, gameOverTexture, moneyTexture;
+Texture2D gameBackground;
+
 Music backgroundMusic;
 
 int highScores[5] = {0};
+
 Player player;
 std::vector<Egg> eggs;
 std::vector<Bonus> bonuses;
 std::vector<Shelf> shelves;
+
 float eggSpawnTimer = 0.0f;
-const float MONEY_SPAWN_CHANCE = 0.2f;
 float currentSpawnTime = EGG_SPAWN_TIME;
 int lastSpeedUpScore = 0;
-int itemsSinceLastMoney = 0; // Счетчик предметов с последнего спавна денег
-const int MONEY_SPAWN_INTERVAL = 7; // Максимум 1 деньги за 7 предметов
+int itemsSinceLastMoney = 0;
+float newWaveTimer = 0.0f;
 
-// Функция загрузки аудио
 void LoadAudio() {
-    // Загружаем только фоновую музыку
     backgroundMusic = LoadMusicStream("resources/music.mp3");
-    
-    if (backgroundMusic.ctxData != NULL) {
+    if (backgroundMusic.ctxData) {
         SetMusicVolume(backgroundMusic, 0.5f);
         PlayMusicStream(backgroundMusic);
-        TraceLog(LOG_INFO, "Background music loaded successfully");
-    } else {
-        TraceLog(LOG_WARNING, "Failed to load background music");
     }
 }
 
-// Функция выгрузки аудио
 void UnloadAudio() {
+    StopMusicStream(backgroundMusic);
     UnloadMusicStream(backgroundMusic);
 }
 
 void LoadHighScores() {
     std::ifstream file("highscores.txt");
     if (file.is_open()) {
-        for (int i = 0; i < 5; i++) {
-            file >> highScores[i];
-        }
+        for (int i = 0; i < 5 && file.good(); ++i) file >> highScores[i];
         file.close();
-    } else {
-        for (int i = 0; i < 5; i++) highScores[i] = 0;
     }
 }
 
 void SaveHighScores() {
     std::ofstream file("highscores.txt");
-    for (int i = 0; i < 5; i++) {
-        file << highScores[i] << "\n";
+    for (int i = 0; i < 5; ++i) file << highScores[i] << "\n";
+}
+
+void InitGame() {
+    player = {};
+    player.position = {SCREEN_WIDTH / 2.0f - 25.0f, SCREEN_HEIGHT - 80.0f};
+    player.rect = {player.position.x, player.position.y, 50, 50};
+    player.speed = 420.0f;
+    player.lives = 3;
+    player.score = 0;
+
+    eggs.clear();
+    bonuses.clear();
+    shelves.clear();
+
+    currentSpawnTime = EGG_SPAWN_TIME;
+    lastSpeedUpScore = 0;
+    itemsSinceLastMoney = 0;
+    eggSpawnTimer = 0.0f;
+    newWaveTimer = 0.0f;
+
+    const float margin = 20.0f;
+    const float len = 150.0f;
+
+    shelves.push_back({{margin, 150, len, 10}, {margin, 150}, {margin + len, 250}, 45.0f*PI/180.0f, 280.0f, true});
+    shelves.push_back({{margin, 300, len, 10}, {margin, 300}, {margin + len, 400}, 45.0f*PI/180.0f, 280.0f, true});
+    shelves.push_back({{SCREEN_WIDTH - margin - len, 150, len, 10}, {SCREEN_WIDTH - margin, 150}, {SCREEN_WIDTH - margin - len, 250}, -45.0f*PI/180.0f, 280.0f, false});
+    shelves.push_back({{SCREEN_WIDTH - margin - len, 300, len, 10}, {SCREEN_WIDTH - margin, 300}, {SCREEN_WIDTH - margin - len, 400}, -45.0f*PI/180.0f, 280.0f, false});
+}
+
+template<typename T>
+void UpdateFallingObject(T& obj) {
+    if (!obj.active) return;
+
+    float dt = GetFrameTime();
+    const Shelf& shelf = shelves[obj.currentShelf];
+
+    if (obj.onShelf) {
+        float slide = 120.0f;
+        if (shelf.isLeft) {
+            obj.velocity.x = cosf(shelf.angle) * slide * 4.1f;
+            obj.velocity.y = sinf(shelf.angle) * slide * 4.1f;
+        } else {
+            obj.velocity.x = -cosf(fabsf(shelf.angle)) * slide * 4.1f;
+            obj.velocity.y = sinf(fabsf(shelf.angle)) * slide * 4.1f;
+        }
+
+        obj.position.x += obj.velocity.x * dt;
+        obj.position.y += obj.velocity.y * dt;
+
+        bool reached = shelf.isLeft ?
+            (obj.position.x >= shelf.endPos.x - 15.0f) :
+            (obj.position.x <= shelf.endPos.x + 15.0f);
+
+        if (reached && !obj.hasReachedEnd) {
+            obj.onShelf = false;
+            obj.hasReachedEnd = true;
+            obj.velocity.x *= 0.3f;
+            obj.velocity.y = 80.0f;
+        }
+    } else {
+        obj.velocity.y += 400.0f * dt;
+        obj.position.x += obj.velocity.x * dt;
+        obj.position.y += obj.velocity.y * dt;
     }
-    file.close();
+
+    obj.rect.x = obj.position.x;
+    obj.rect.y = obj.position.y;
+
+    if (CheckCollisionRecs(player.rect, obj.rect)) {
+        obj.active = false;
+        player.score += std::is_same_v<T, Egg> ? 10 : 50;
+    }
+
+    if (obj.position.y > SCREEN_HEIGHT + 50) {
+        obj.active = false;
+        if constexpr (std::is_same_v<T, Egg>) {
+            player.lives--;
+            if (player.lives <= 0) state = GAME_OVER;
+        }
+    }
+}
+
+void UpdateGame() {
+    float dt = GetFrameTime();
+    
+    // ПРАВКА ТУТ: Обновляем музыку только если она включена
+    if (musicEnabled && backgroundMusic.ctxData != NULL) {
+        UpdateMusicStream(backgroundMusic);
+    }
+
+    if (player.score >= lastSpeedUpScore + 100) {
+        lastSpeedUpScore = player.score - (player.score % 100);
+        currentSpawnTime = fmaxf(0.3f, currentSpawnTime / 1.3f);
+        newWaveTimer = 1.0f;
+    }
+
+    if (newWaveTimer > 0.0f) {
+        newWaveTimer -= dt;
+    }
+
+    if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A)) player.position.x -= player.speed * dt;
+    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) player.position.x += player.speed * dt;
+
+    if (player.position.x < 0) player.position.x = 0;
+    if (player.position.x > SCREEN_WIDTH - player.rect.width)
+        player.position.x = SCREEN_WIDTH - player.rect.width;
+
+    player.rect.x = player.position.x;
+
+    eggSpawnTimer += dt;
+    if (eggSpawnTimer >= currentSpawnTime) {
+        eggSpawnTimer -= currentSpawnTime;
+
+        int idx = GetRandomValue(0, (int)shelves.size() - 1);
+        const Shelf& s = shelves[idx];
+        itemsSinceLastMoney++;
+
+        Vector2 pos = s.startPos;
+        pos.y -= 70.0f;
+        pos.x += s.isLeft ? 30.0f : -30.0f;
+
+        if (itemsSinceLastMoney == 5) {
+            itemsSinceLastMoney = 0;
+            Bonus b{};
+            b.position = pos;
+            b.rect = {pos.x, pos.y, 23, 13};
+            b.active = true;
+            b.onShelf = true;
+            b.currentShelf = idx;
+            bonuses.push_back(b);
+        } else {
+            Egg e{};
+            e.position = pos;
+            e.rect = {pos.x, pos.y, 25, 25};
+            e.active = true;
+            e.onShelf = true;
+            e.currentShelf = idx;
+
+            Color cols[] = {WHITE, LIGHTGRAY, YELLOW, PINK, ORANGE};
+            e.color = cols[GetRandomValue(0, 4)];
+
+            eggs.push_back(e);
+        }
+    }
+
+    for (auto& e : eggs)    UpdateFallingObject<Egg>(e);
+    for (auto& b : bonuses) UpdateFallingObject<Bonus>(b);
+
+    eggs.erase(std::remove_if(eggs.begin(), eggs.end(), [](const Egg& e){ return !e.active; }), eggs.end());
+    bonuses.erase(std::remove_if(bonuses.begin(), bonuses.end(), [](const Bonus& b){ return !b.active; }), bonuses.end());
+
+    if (IsKeyPressed(KEY_ESCAPE)) state = MENU;
+}
+
+void DrawShelf(const Shelf& s) {
+    DrawLineEx(s.startPos, s.endPos, 12.0f, BROWN);
+    DrawCircleV(s.endPos, 6, s.isLeft ? RED : GREEN);
+}
+
+void DrawGame() {
+    if (gameBackground.id != 0) {
+        DrawTexturePro(gameBackground,
+                       (Rectangle){0, 0, (float)gameBackground.width, (float)gameBackground.height},
+                       (Rectangle){0, 0, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT},
+                       (Vector2){0, 0}, 0.0f, WHITE);
+    } else {
+        ClearBackground(SKYBLUE);
+    }
+
+    for (const auto& s : shelves) DrawShelf(s);
+
+    for (const auto& e : eggs) {
+        if (!e.active) continue;
+        if (eggTexture.id) {
+            Vector2 p = {
+                e.position.x + (25 - eggTexture.width  * 0.13f) * 0.5f,
+                e.position.y + (25 - eggTexture.height * 0.13f) * 0.5f
+            };
+            DrawTextureEx(eggTexture, p, 0.0f, 0.13f, WHITE);
+        } else {
+            DrawEllipse(e.position.x + 12, e.position.y + 14, 14, 18, e.color);
+        }
+    }
+
+    for (const auto& b : bonuses) {
+        if (!b.active) continue;
+        float bob = sinf(GetTime() * 5.0f + b.position.x * 0.1f) * 4.0f;
+
+        if (moneyTexture.id) {
+            Vector2 p = {
+                b.position.x + (23 - moneyTexture.width  * 0.14f) * 0.5f,
+                b.position.y + (13 - moneyTexture.height * 0.14f) * 0.5f + bob
+            };
+            DrawTextureEx(moneyTexture, p, 0.0f, 0.14f, WHITE);
+        } else {
+            Rectangle r = b.rect;
+            r.y += bob;
+            DrawRectangleRec(r, GREEN);
+            DrawText("$$", (int)b.position.x + 2, (int)(b.position.y + bob + 2), 20, BLACK);
+        }
+    }
+
+    if (playerTexture.id) {
+        float scale = 0.9f;
+        Vector2 p = {
+            player.position.x + (50 - playerTexture.width * scale) * 0.5f,
+            player.position.y + (50 - playerTexture.height * scale) * 0.5f
+        };
+        DrawTextureEx(playerTexture, p, 0.0f, scale, WHITE);
+    } else {
+        DrawRectangleRec(player.rect, BLUE);
+    }
+
+    DrawText(TextFormat("Score: %d", player.score), SCREEN_WIDTH/2 - MeasureText(TextFormat("Score: %d", player.score), 40)/2, 15, 40, WHITE);
+
+    if (heartTexture.id) {
+        float scale = 0.06f;
+        float size = heartTexture.width * scale;
+        float space = size + 12;
+        float startX = (SCREEN_WIDTH - (player.lives * space - 12)) / 2;
+        for (int i = 0; i < player.lives; ++i) {
+            DrawTextureEx(heartTexture, {startX + i*space, 70}, 0, scale, WHITE);
+        }
+    } else {
+        for (int i = 0; i < player.lives; ++i) {
+            DrawHeart(SCREEN_WIDTH/2 + (i-1)*50 - 75, 70, 40, RED);
+        }
+    }
+
+    if (newWaveTimer > 0.0f) {
+        float alpha = newWaveTimer;
+        Color waveColor = Fade(WHITE, alpha);
+        const char* text = "NEW WAVE!";
+        int fontSize = 60;
+        int textWidth = MeasureText(text, fontSize);
+        DrawText(text, SCREEN_WIDTH/2 - textWidth/2, SCREEN_HEIGHT/2 - 100, fontSize, waveColor);
+    }
+}
+
+void DrawGameOver() {
+    ClearBackground(BLACK);
+
+    if (gameOverTexture.id) {
+        float scale = (SCREEN_HEIGHT * 0.5f) / gameOverTexture.height;
+        Vector2 pos = {(SCREEN_WIDTH - gameOverTexture.width * scale) / 2.0f, 100.0f};
+        DrawTextureEx(gameOverTexture, pos, 0.0f, scale, WHITE);
+    }
+
+    DrawText(TextFormat("FINAL SCORE: %d", player.score),
+             SCREEN_WIDTH / 2 - MeasureText(TextFormat("FINAL SCORE: %d", player.score), 50) / 2,
+             320, 50, RAYWHITE);
+
+    static bool scoreSaved = false; 
+
+    if (!scoreSaved) {
+        for (int i = 0; i < 5; ++i) {
+            if (player.score > highScores[i]) {
+                for (int j = 4; j > i; --j) {
+                    highScores[j] = highScores[j - 1];
+                }
+                highScores[i] = player.score;
+                SaveHighScores();
+                break;
+            }
+        }
+        scoreSaved = true;
+    }
+
+    if (player.score >= highScores[0] && player.score > 0) {
+        float t = (sinf(GetTime() * 7.0f) + 1.0f) * 0.5f;
+        DrawText("NEW HIGH SCORE!", SCREEN_WIDTH / 2 - MeasureText("NEW HIGH SCORE!", 44) / 2, 260, 44, Fade(WHITE, t));
+    }
+
+    const char* menuText = "Back to Menu";
+    const char* exitText = "Exit Game";
+    int fontSize = 30;
+    int menuWidth = MeasureText(menuText, fontSize);
+    int exitWidth = MeasureText(exitText, fontSize);
+    int menuX = SCREEN_WIDTH / 2 - menuWidth / 2;
+    int menuY = 480;
+    int exitX = SCREEN_WIDTH / 2 - exitWidth / 2;
+    int exitY = 520;
+
+    Vector2 mousePos = GetMousePosition();
+    bool mouseOverMenu = CheckCollisionPointRec(mousePos, (Rectangle){(float)menuX, (float)menuY, (float)menuWidth, (float)fontSize});
+    bool mouseOverExit = CheckCollisionPointRec(mousePos, (Rectangle){(float)exitX, (float)exitY, (float)exitWidth, (float)fontSize});
+
+    Color menuColor = mouseOverMenu ? WHITE : GRAY;
+    Color exitColor = mouseOverExit ? WHITE : GRAY;
+
+    DrawText(menuText, menuX, menuY, fontSize, menuColor);
+    DrawText(exitText, exitX, exitY, fontSize, exitColor);
+
+    if (IsKeyPressed(KEY_SPACE)) {
+        scoreSaved = false; 
+        InitGame();
+        state = GAME;
+    }
+
+    if (IsKeyPressed(KEY_ESCAPE) || (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && mouseOverMenu)) {
+        scoreSaved = false; 
+        state = MENU;
+    }
+
+    if (IsKeyPressed(KEY_Q) || (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && mouseOverExit)) {
+        state = EXIT;
+    }
 }
 
 void DrawHeart(int x, int y, int size, Color color) {
@@ -76,429 +370,14 @@ void DrawHeart(int x, int y, int size, Color color) {
                  (Vector2){fx + fsize/2, fy + fsize}, color);
 }
 
-void InitGame() {
-    player.position = {SCREEN_WIDTH / 2 - 25, SCREEN_HEIGHT - 80};
-    player.rect = {player.position.x, player.position.y, 50, 50};
-    player.speed = 400.0f;
-    player.score = 0;
-    player.lives = 3;
-
-    eggs.clear();
-    bonuses.clear();
-    shelves.clear();
-    
-    // Сбрасываем время спавна и счетчики
-    currentSpawnTime = EGG_SPAWN_TIME;
-    lastSpeedUpScore = 0;
-    itemsSinceLastMoney = 0; // Сбрасываем счетчик денег
-    
-    // ПОЛКИ КОРОЧЕ И БЛИЖЕ К КРАЯМ
-    float shelfLength = 150.0f;
-    float margin = 0.1f;
-    
-    // Левые полки начинаются от самого края
-    shelves.push_back({
-        {margin, 150, shelfLength, 10},
-        {margin, 150}, 
-        {margin + shelfLength, 250},
-        45.0f * 3.14159f / 180.0f, 280.0f, true
-    });
-    
-    shelves.push_back({
-        {margin, 300, shelfLength, 10},
-        {margin, 300},
-        {margin + shelfLength, 400},
-        45.0f * 3.14159f / 180.0f, 280.0f, true
-    });
-    
-    // Правые полки начинаются от правого края
-    shelves.push_back({
-        {SCREEN_WIDTH - margin - shelfLength, 150, shelfLength, 10},
-        {SCREEN_WIDTH - margin, 150}, 
-        {SCREEN_WIDTH - margin - shelfLength, 250},
-        -45.0f * 3.14159f / 180.0f, 280.0f, false
-    });
-    
-    shelves.push_back({
-        {SCREEN_WIDTH - margin - shelfLength, 300, shelfLength, 10},
-        {SCREEN_WIDTH - margin, 300},
-        {SCREEN_WIDTH - margin - shelfLength, 400},
-        -45.0f * 3.14159f / 180.0f, 280.0f, false
-    });
-
-    eggSpawnTimer = 0.0f;
-}
-
-void UpdateGame() {
-    float deltaTime = GetFrameTime();
-
-    // Обновляем музыку
-    UpdateMusicStream(backgroundMusic);
-
-    // Проверяем ускорение спавна каждые 100 очков
-    if (player.score >= lastSpeedUpScore + 100) {
-        lastSpeedUpScore = player.score;
-        currentSpawnTime /= 1.3f;
-        if (currentSpawnTime < 0.3f) {
-            currentSpawnTime = 0.3f;
-        }
-        TraceLog(LOG_INFO, "Spawn speed increased! Current spawn time: %.2f", currentSpawnTime);
-    }
-
-    // Движение игрока
-    if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) {
-        player.position.x -= player.speed * deltaTime;
-    }
-    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) {
-        player.position.x += player.speed * deltaTime;
-    }
-
-    if (player.position.x < 0) player.position.x = 0;
-    if (player.position.x > SCREEN_WIDTH - player.rect.width) {
-        player.position.x = SCREEN_WIDTH - player.rect.width;
-    }
-
-    player.rect.x = player.position.x;
-    player.rect.y = player.position.y;
-
-    eggSpawnTimer += deltaTime;
-    if (eggSpawnTimer >= currentSpawnTime) {
-        eggSpawnTimer = 0.0f;
-        
-        int shelfIndex = rand() % shelves.size();
-        Shelf& shelf = shelves[shelfIndex];
-        
-        // Увеличиваем счетчик предметов
-        itemsSinceLastMoney++;
-        
-        // Решаем: слива или деньги (только если прошло достаточно предметов)
-        bool spawnMoney = false;
-        if (itemsSinceLastMoney >= MONEY_SPAWN_INTERVAL) {
-            spawnMoney = (rand() % 100) < (MONEY_SPAWN_CHANCE * 100);
-            if (spawnMoney) {
-                itemsSinceLastMoney = 0; // Сбрасываем счетчик при спавне денег
-            }
-        }
-        
-        if (spawnMoney) {
-            // Спавним деньги
-            Bonus newBonus;
-            if (shelf.isLeft) {
-                newBonus.position = {shelf.startPos.x + 25, shelf.startPos.y - 70};
-            } else {
-                newBonus.position = {shelf.startPos.x - 25, shelf.startPos.y - 70};
-            }
-            newBonus.rect = {newBonus.position.x, newBonus.position.y, 23, 13};
-            newBonus.velocity = {0, 0};
-            newBonus.active = true;
-            newBonus.onShelf = true;
-            newBonus.currentShelf = shelfIndex;
-            newBonus.hasReachedEnd = false;
-            
-            bonuses.push_back(newBonus);
-        } else {
-            // Спавним сливу
-            Egg newEgg;
-            if (shelf.isLeft) {
-                newEgg.position = {shelf.startPos.x + 25, shelf.startPos.y - 70};
-            } else {
-                newEgg.position = {shelf.startPos.x - 25, shelf.startPos.y - 70};
-            }
-            newEgg.rect = {newEgg.position.x, newEgg.position.y, 25, 25};
-            newEgg.velocity = {0, 0};
-            newEgg.active = true;
-            newEgg.onShelf = true;
-            newEgg.currentShelf = shelfIndex;
-            newEgg.hasReachedEnd = false;
-            
-            Color eggColors[] = {WHITE, LIGHTGRAY, GRAY, YELLOW, PINK};
-            newEgg.color = eggColors[rand() % 5];
-            
-            eggs.push_back(newEgg);
-        }
-    }
-
-    // Обработка слив
-    for (auto& egg : eggs) {
-        if (egg.active) {
-            if (egg.onShelf) {
-                Shelf& shelf = shelves[egg.currentShelf];
-                float slideSpeed = 120.0f;
-                
-                if (shelf.isLeft) {
-                    egg.velocity.x = cos(shelf.angle) * slideSpeed * 4.1f;
-                    egg.velocity.y = sin(shelf.angle) * slideSpeed * 4.1f;
-                } else {
-                    egg.velocity.x = -cos(fabs(shelf.angle)) * slideSpeed * 4.1f;
-                    egg.velocity.y = sin(fabs(shelf.angle)) * slideSpeed * 4.1f;
-                }
-                
-                egg.position.x += egg.velocity.x * deltaTime;
-                egg.position.y += egg.velocity.y * deltaTime;
-                egg.rect.x = egg.position.x;
-                egg.rect.y = egg.position.y;
-                
-                if (shelf.isLeft) {
-                    if (egg.position.x >= shelf.endPos.x - 10 && !egg.hasReachedEnd) {
-                        egg.onShelf = false;
-                        egg.hasReachedEnd = true;
-                        egg.velocity = {egg.velocity.x * 0.3f, 80.0f};
-                    }
-                } else {
-                    if (egg.position.x <= shelf.endPos.x + 10 && !egg.hasReachedEnd) {
-                        egg.onShelf = false;
-                        egg.hasReachedEnd = true;
-                        egg.velocity = {egg.velocity.x * 0.3f, 80.0f};
-                    }
-                }
-                
-            } else {
-                egg.velocity.y += 400.0f * deltaTime;
-                egg.position.x += egg.velocity.x * deltaTime;
-                egg.position.y += egg.velocity.y * deltaTime;
-                egg.rect.x = egg.position.x;
-                egg.rect.y = egg.position.y;
-            }
-
-            if (CheckCollisionRecs(player.rect, egg.rect)) {
-                egg.active = false;
-                player.score += 10;
-            }
-
-            if (egg.position.y > SCREEN_HEIGHT) {
-                egg.active = false;
-                player.lives--;
-                
-                if (player.lives <= 0) {
-                    state = GAME_OVER;
-                }
-            }
-        }
-    }
-
-    // Обработка денег
-    for (auto& bonus : bonuses) {
-        if (bonus.active) {
-            if (bonus.onShelf) {
-                Shelf& shelf = shelves[bonus.currentShelf];
-                float slideSpeed = 120.0f;
-                
-                if (shelf.isLeft) {
-                    bonus.velocity.x = cos(shelf.angle) * slideSpeed * 4.1f;
-                    bonus.velocity.y = sin(shelf.angle) * slideSpeed * 4.1f;
-                } else {
-                    bonus.velocity.x = -cos(fabs(shelf.angle)) * slideSpeed * 4.1f;
-                    bonus.velocity.y = sin(fabs(shelf.angle)) * slideSpeed * 4.1f;
-                }
-                
-                bonus.position.x += bonus.velocity.x * deltaTime;
-                bonus.position.y += bonus.velocity.y * deltaTime;
-                bonus.rect.x = bonus.position.x;
-                bonus.rect.y = bonus.position.y;
-                
-                if (shelf.isLeft) {
-                    if (bonus.position.x >= shelf.endPos.x - 10 && !bonus.hasReachedEnd) {
-                        bonus.onShelf = false;
-                        bonus.hasReachedEnd = true;
-                        bonus.velocity = {bonus.velocity.x * 0.3f, 80.0f};
-                    }
-                } else {
-                    if (bonus.position.x <= shelf.endPos.x + 10 && !bonus.hasReachedEnd) {
-                        bonus.onShelf = false;
-                        bonus.hasReachedEnd = true;
-                        bonus.velocity = {bonus.velocity.x * 0.3f, 80.0f};
-                    }
-                }
-                
-            } else {
-                bonus.velocity.y += 400.0f * deltaTime;
-                bonus.position.x += bonus.velocity.x * deltaTime;
-                bonus.position.y += bonus.velocity.y * deltaTime;
-                bonus.rect.x = bonus.position.x;
-                bonus.rect.y = bonus.position.y;
-            }
-
-            if (CheckCollisionRecs(player.rect, bonus.rect)) {
-                bonus.active = false;
-                player.score += 50;
-            }
-
-            if (bonus.position.y > SCREEN_HEIGHT) {
-                bonus.active = false;
-            }
-        }
-    }
-
-    // Удаление неактивных объектов
-    eggs.erase(std::remove_if(eggs.begin(), eggs.end(), 
-               [](const Egg& egg) { return !egg.active; }), 
-               eggs.end());
-               
-    bonuses.erase(std::remove_if(bonuses.begin(), bonuses.end(), 
-                  [](const Bonus& bonus) { return !bonus.active; }), 
-                  bonuses.end());
-
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        state = MENU;
-    }
-}
-
-// ... остальные функции DrawShelf, DrawGame, DrawGameOver без изменений ...
-
-void DrawShelf(const Shelf& shelf) {
-    DrawLineEx(shelf.startPos, shelf.endPos, 10.0f, BROWN);
-    
-    if (shelf.isLeft) {
-        DrawCircle(shelf.endPos.x, shelf.endPos.y, 5, RED);
-    } else {
-        DrawCircle(shelf.endPos.x, shelf.endPos.y, 5, GREEN);
-    }
-}
-
-void DrawGame() {
-    ClearBackground(SKYBLUE);
-
-    for (const auto& shelf : shelves) {
-        DrawShelf(shelf);
-    }
-
-    // Рисуем сливы
-    for (const auto& egg : eggs) {
-        if (egg.active) {
-            if (eggTexture.id != 0) {
-                float eggScale = 0.1f;
-                float scaledWidth = eggTexture.width * eggScale;
-                float scaledHeight = eggTexture.height * eggScale;
-                float offsetX = (egg.rect.width - scaledWidth) / 2;
-                float offsetY = (egg.rect.height - scaledHeight) / 2;
-                Vector2 eggDrawPosition = {egg.position.x + offsetX, egg.position.y + offsetY};
-                DrawTextureEx(eggTexture, eggDrawPosition, 0.0f, eggScale, WHITE);
-            } else {
-                DrawEllipse(egg.position.x + 12, egg.position.y + 12, 12, 15, egg.color);
-                DrawEllipseLines(egg.position.x + 12, egg.position.y + 12, 12, 15, DARKGRAY);
-            }
-        }
-    }
-
-    // Рисуем деньги (МАСШТАБ ИЗМЕНЕН: 0.1f вместо 0.15f)
-    for (const auto& bonus : bonuses) {
-        if (bonus.active) {
-            if (moneyTexture.id != 0) {
-                float moneyScale = 0.1f;
-                float scaledWidth = moneyTexture.width * moneyScale;
-                float scaledHeight = moneyTexture.height * moneyScale;
-                float offsetX = (bonus.rect.width - scaledWidth) / 2;
-                float offsetY = (bonus.rect.height - scaledHeight) / 2;
-                Vector2 moneyDrawPosition = {bonus.position.x + offsetX, bonus.position.y + offsetY};
-                DrawTextureEx(moneyTexture, moneyDrawPosition, 0.0f, moneyScale, WHITE);
-            } else {
-                // Если текстуры нет, рисуем зеленый прямоугольник
-                DrawRectangleRec(bonus.rect, GREEN);
-                DrawRectangleLinesEx(bonus.rect, 2, DARKGREEN);
-                DrawText("$$", bonus.position.x + 5, bonus.position.y + 2, 15, BLACK);
-            }
-        }
-    }
-
-    if (playerTexture.id != 0) {
-        float scale = 0.7f;
-        float scaledWidth = playerTexture.width * scale;
-        float scaledHeight = playerTexture.height * scale;
-        float offsetX = (player.rect.width - scaledWidth) / 2;
-        float offsetY = (player.rect.height - scaledHeight) / 2;
-        Vector2 drawPosition = {player.position.x + offsetX, player.position.y + offsetY};
-        DrawTextureEx(playerTexture, drawPosition, 0.0f, scale, WHITE);
-    } else {
-        DrawRectangleRec(player.rect, BLUE);
-        DrawRectangleLinesEx(player.rect, 2, DARKBLUE);
-        DrawLineEx({player.position.x + 10, player.position.y - 5},
-                   {player.position.x + player.rect.width - 10, player.position.y - 5}, 3, DARKBLUE);
-    }
-
-    // СЧЕТ ПО ЦЕНТРУ ВВЕРХУ
-    int scoreTextWidth = MeasureText(TextFormat("Score: %d", player.score), 30);
-    DrawText(TextFormat("Score: %d", player.score), (SCREEN_WIDTH - scoreTextWidth) / 2, 10, 30, DARKBLUE);
-
-    // Отображаем текущую скорость спавна (опционально)
-    DrawText(TextFormat("Spawn: %.1fs", currentSpawnTime), 10, SCREEN_HEIGHT - 30, 20, DARKBLUE);
-
-    // ЖИЗНИ ПО ЦЕНТРУ ПОД СЧЕТОМ
-    if (heartTexture.id != 0) {
-        float heartScale = 0.08f;
-        float heartSize = heartTexture.width * heartScale;
-        float totalHeartsWidth = player.lives * heartSize + (player.lives - 1) * 10.0f;
-        float startX = (SCREEN_WIDTH - totalHeartsWidth) / 2;
-        
-        for (int i = 0; i < player.lives; i++) {
-            Vector2 heartPosition = {startX + i * (heartSize + 10.0f), 50.0f};
-            DrawTextureEx(heartTexture, heartPosition, 0.0f, heartScale, WHITE);
-        }
-    } else {
-        int totalHeartsWidth = player.lives * 40 - 10;
-        int startX = (SCREEN_WIDTH - totalHeartsWidth) / 2;
-        
-        for (int i = 0; i < player.lives; i++) {
-            DrawHeart(startX + i * 40, 60, 30, RED);
-        }
-    }
-    
-    DrawText("Press ESC to return to menu", 250, SCREEN_HEIGHT - 30, 20, DARKBLUE);
-
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        state = MENU;
-    }
-}
-
-// Новая функция для экрана Game Over
-void DrawGameOver() {
-    ClearBackground(BLACK);
-
-    if (gameOverTexture.id != 0) {
-        float targetHeight = SCREEN_HEIGHT * 0.9f;
-        float scaleY = targetHeight / gameOverTexture.height;
-        float scaleX = scaleY * 0.9f;
-        
-        float scaledWidth = gameOverTexture.width * scaleX;
-        float scaledHeight = gameOverTexture.height * scaleY;
-        float posX = (SCREEN_WIDTH - scaledWidth) / 2;
-        float posY = (SCREEN_HEIGHT - scaledHeight) / 2 - 80;
-        
-        DrawTextureEx(gameOverTexture, (Vector2){posX, posY}, 0.0f, scaleX, WHITE);
-    }
-
-    DrawText(TextFormat("FINAL SCORE: %d", player.score), 210, 450, 40, WHITE);
-    
-    // ОБНОВЛЯЕМ РЕКОРДЫ (ИСПРАВЛЕННАЯ ЛОГИКА)
-    bool isNewHighScore = false;
-    int newScore = player.score;
-    
-    // Проверяем, попадает ли счет в таблицу рекордов
-    for (int i = 0; i < 5; i++) {
-        if (newScore > highScores[i]) {
-            isNewHighScore = true;
-            // Сдвигаем рекорды вниз, начиная с конца
-            for (int j = 4; j > i; j--) {
-                highScores[j] = highScores[j-1];
-            }
-            // Вставляем новый рекорд на правильную позицию
-            highScores[i] = newScore;
-            break; // ВАЖНО: выходим после вставки
-        }
-    }
-    
-    if (isNewHighScore) {
-        DrawText("NEW HIGH SCORE!", 250, 400, 30, YELLOW);
-        SaveHighScores(); // Сохраняем новые рекорды
-    }
-    
-    DrawText("SPACE to restart", 230, 500, 30, WHITE);
-    DrawText("ESC to exit", 275, 540, 30, WHITE);
-
-    if (IsKeyPressed(KEY_SPACE)) {
-        InitGame();
-        state = GAME;
-    }
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        state = MENU;
-    }
+void UnloadGameResources() {
+    UnloadTexture(menuBackground);
+    UnloadTexture(playerTexture);
+    UnloadTexture(eggTexture);
+    UnloadTexture(shelfTexture);
+    UnloadTexture(heartTexture);
+    UnloadTexture(gameOverTexture);
+    UnloadTexture(moneyTexture);
+    UnloadTexture(gameBackground);
+    UnloadAudio();
 }
