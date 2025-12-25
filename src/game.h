@@ -69,6 +69,14 @@ extern Texture2D heartTexture;
 extern Texture2D gameOverTexture;
 extern Texture2D moneyTexture;
 extern Texture2D gameBackground;
+extern Texture2D recordsButtonTexture;
+extern Texture2D startButtonTexture;
+extern Texture2D exitButtonTexture;
+extern Texture2D musicButtonTexture;
+extern Texture2D recordsTableTexture;
+extern Texture2D bannerTexture;
+extern Texture2D scoreTexture;
+extern Texture2D backToMenuButtonTexture;
 
 extern Music backgroundMusic;
 
@@ -92,5 +100,6 @@ void DrawGame();
 void DrawGameOver();
 void DrawMenu();
 void DrawRecords();
+void DrawStyledButton(const char* text, Rectangle rect, bool isHovered, Color baseColor, int fontSize = 35);
 
 #endif

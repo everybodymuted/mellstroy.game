@@ -4,11 +4,19 @@
 #include <cstdio>
 
 GameState state = MENU;
-bool musicEnabled = true; // Добавлено
+bool musicEnabled = true;
 
 Texture2D menuBackground, playerTexture, eggTexture, shelfTexture;
 Texture2D heartTexture, gameOverTexture, moneyTexture;
 Texture2D gameBackground;
+Texture2D recordsButtonTexture;
+Texture2D startButtonTexture;
+Texture2D exitButtonTexture;
+Texture2D musicButtonTexture;
+Texture2D recordsTableTexture;
+Texture2D bannerTexture;
+Texture2D scoreTexture;
+Texture2D backToMenuButtonTexture;
 
 Music backgroundMusic;
 
@@ -26,10 +34,9 @@ int itemsSinceLastMoney = 0;
 float newWaveTimer = 0.0f;
 
 void LoadAudio() {
-    backgroundMusic = LoadMusicStream("resources/music.mp3");
+    backgroundMusic = LoadMusicStream("resources/music2.mp3");
     if (backgroundMusic.ctxData) {
-        SetMusicVolume(backgroundMusic, 0.5f);
-        PlayMusicStream(backgroundMusic);
+        SetMusicVolume(backgroundMusic, 0.2f);
     }
 }
 
@@ -69,13 +76,28 @@ void InitGame() {
     eggSpawnTimer = 0.0f;
     newWaveTimer = 0.0f;
 
-    const float margin = 20.0f;
-    const float len = 150.0f;
+    const float leftMargin = 87.0f;
+    const float rightMargin = -173.0f;
+    const float len = 260.0f;
+    const float topLevelY = 220.0f;
+    const float bottomLevelY = 370.0f;
+    const float endOffset = 100.0f;
+    const float leftShelfAngle = 30.0f;
+    const float rightShelfAngle = 30.0f;
 
-    shelves.push_back({{margin, 150, len, 10}, {margin, 150}, {margin + len, 250}, 45.0f*PI/180.0f, 280.0f, true});
-    shelves.push_back({{margin, 300, len, 10}, {margin, 300}, {margin + len, 400}, 45.0f*PI/180.0f, 280.0f, true});
-    shelves.push_back({{SCREEN_WIDTH - margin - len, 150, len, 10}, {SCREEN_WIDTH - margin, 150}, {SCREEN_WIDTH - margin - len, 250}, -45.0f*PI/180.0f, 280.0f, false});
-    shelves.push_back({{SCREEN_WIDTH - margin - len, 300, len, 10}, {SCREEN_WIDTH - margin, 300}, {SCREEN_WIDTH - margin - len, 400}, -45.0f*PI/180.0f, 280.0f, false});
+    float leftTopY = topLevelY;
+    float leftTopEndY = topLevelY + endOffset;
+    float leftBottomY = bottomLevelY;
+    float leftBottomEndY = bottomLevelY + endOffset;
+    float rightTopY = topLevelY;
+    float rightTopEndY = topLevelY + endOffset;
+    float rightBottomY = bottomLevelY;
+    float rightBottomEndY = bottomLevelY + endOffset;
+
+    shelves.push_back({{leftMargin, leftTopY, len, 140}, {leftMargin, leftTopY}, {leftMargin + len, leftTopEndY}, leftShelfAngle*PI/180.0f, 280.0f, true});
+    shelves.push_back({{leftMargin, leftBottomY, len, 140}, {leftMargin, leftBottomY}, {leftMargin + len, leftBottomEndY}, leftShelfAngle*PI/180.0f, 280.0f, true});
+    shelves.push_back({{SCREEN_WIDTH - rightMargin - len, rightTopY, len, 140}, {SCREEN_WIDTH - rightMargin, rightTopY}, {SCREEN_WIDTH - rightMargin - len, rightTopEndY}, -rightShelfAngle*PI/180.0f, 280.0f, false});
+    shelves.push_back({{SCREEN_WIDTH - rightMargin - len, rightBottomY, len, 140}, {SCREEN_WIDTH - rightMargin, rightBottomY}, {SCREEN_WIDTH - rightMargin - len, rightBottomEndY}, -rightShelfAngle*PI/180.0f, 280.0f, false});
 }
 
 template<typename T>
@@ -86,7 +108,10 @@ void UpdateFallingObject(T& obj) {
     const Shelf& shelf = shelves[obj.currentShelf];
 
     if (obj.onShelf) {
-        float slide = 120.0f;
+        float baseSlideSpeed = 120.0f;
+        float angleCompensation = 1.0f / cosf(fabsf(shelf.angle));
+        float slide = baseSlideSpeed * angleCompensation;
+        
         if (shelf.isLeft) {
             obj.velocity.x = cosf(shelf.angle) * slide * 4.1f;
             obj.velocity.y = sinf(shelf.angle) * slide * 4.1f;
@@ -98,15 +123,20 @@ void UpdateFallingObject(T& obj) {
         obj.position.x += obj.velocity.x * dt;
         obj.position.y += obj.velocity.y * dt;
 
-        bool reached = shelf.isLeft ?
-            (obj.position.x >= shelf.endPos.x - 15.0f) :
-            (obj.position.x <= shelf.endPos.x + 15.0f);
+        const float leftEarlyDropOffset = 100.0f;
+        const float rightEarlyDropOffset = -100.0f;
+        bool reached;
+        if (shelf.isLeft) {
+            reached = obj.position.x >= shelf.endPos.x - leftEarlyDropOffset;
+        } else {
+            reached = obj.position.x <= shelf.endPos.x + rightEarlyDropOffset;
+        }
 
         if (reached && !obj.hasReachedEnd) {
             obj.onShelf = false;
             obj.hasReachedEnd = true;
-            obj.velocity.x *= 0.3f;
-            obj.velocity.y = 80.0f;
+            obj.velocity.x *= 0.5f;
+            obj.velocity.y = 100.0f;
         }
     } else {
         obj.velocity.y += 400.0f * dt;
@@ -133,11 +163,6 @@ void UpdateFallingObject(T& obj) {
 
 void UpdateGame() {
     float dt = GetFrameTime();
-    
-    // ПРАВКА ТУТ: Обновляем музыку только если она включена
-    if (musicEnabled && backgroundMusic.ctxData != NULL) {
-        UpdateMusicStream(backgroundMusic);
-    }
 
     if (player.score >= lastSpeedUpScore + 100) {
         lastSpeedUpScore = player.score - (player.score % 100);
@@ -166,9 +191,28 @@ void UpdateGame() {
         const Shelf& s = shelves[idx];
         itemsSinceLastMoney++;
 
+        const float topLevelY = 220.0f;
+        const float bottomLevelY = 370.0f;
+        const float spawnOffsetY = 70.0f;
+        const float leftSpawnOffsetY = 67.0f;
+        const float rightSpawnOffsetY = 150.0f;
+        const float spawnOffsetX = 30.0f;
+        
         Vector2 pos = s.startPos;
-        pos.y -= 70.0f;
-        pos.x += s.isLeft ? 30.0f : -30.0f;
+        if (s.startPos.y < (topLevelY + bottomLevelY) / 2.0f) {
+            pos.y = topLevelY - spawnOffsetY;
+            if (s.isLeft) pos.y -= leftSpawnOffsetY;
+            else pos.y -= rightSpawnOffsetY;
+        } else {
+            pos.y = bottomLevelY - spawnOffsetY;
+            if (s.isLeft) pos.y -= leftSpawnOffsetY;
+            else pos.y -= rightSpawnOffsetY;
+        }
+        if (s.isLeft) {
+            pos.x = 0.0f;
+        } else {
+            pos.x += -spawnOffsetX;
+        }
 
         if (itemsSinceLastMoney == 5) {
             itemsSinceLastMoney = 0;
@@ -204,18 +248,49 @@ void UpdateGame() {
 }
 
 void DrawShelf(const Shelf& s) {
-    DrawLineEx(s.startPos, s.endPos, 12.0f, BROWN);
-    DrawCircleV(s.endPos, 6, s.isLeft ? RED : GREEN);
+    if (shelfTexture.id == 0) return;
+    
+    float shelfLength = s.rect.width;
+    float shelfThickness = s.rect.height;
+    float angleDegrees = s.angle * 180.0f / PI;
+    
+    Vector2 centerPos = {
+        (s.startPos.x + s.endPos.x) / 2.0f,
+        (s.startPos.y + s.endPos.y) / 2.0f
+    };
+    
+    Rectangle sourceRect = {0, 0, (float)shelfTexture.width, (float)shelfTexture.height};
+    Rectangle destRect = {
+        centerPos.x - shelfLength / 2.0f,
+        centerPos.y - shelfThickness / 2.0f,
+        shelfLength,
+        shelfThickness
+    };
+    
+    Vector2 origin = {shelfLength / 2.0f, shelfThickness / 2.0f};
+    DrawTexturePro(shelfTexture, sourceRect, destRect, origin, angleDegrees, WHITE);
 }
 
 void DrawGame() {
+    Color darkBlue = {30, 35, 50, 255};
+    Color darkerBlue = {20, 25, 40, 255};
+    
     if (gameBackground.id != 0) {
         DrawTexturePro(gameBackground,
                        (Rectangle){0, 0, (float)gameBackground.width, (float)gameBackground.height},
                        (Rectangle){0, 0, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT},
                        (Vector2){0, 0}, 0.0f, WHITE);
     } else {
-        ClearBackground(SKYBLUE);
+        for (int i = 0; i < SCREEN_HEIGHT; i++) {
+            float ratio = (float)i / SCREEN_HEIGHT;
+            Color color = {
+                (unsigned char)(darkBlue.r + (darkerBlue.r - darkBlue.r) * ratio),
+                (unsigned char)(darkBlue.g + (darkerBlue.g - darkBlue.g) * ratio),
+                (unsigned char)(darkBlue.b + (darkerBlue.b - darkBlue.b) * ratio),
+                255
+            };
+            DrawLine(0, i, SCREEN_WIDTH, i, color);
+        }
     }
 
     for (const auto& s : shelves) DrawShelf(s);
@@ -262,15 +337,49 @@ void DrawGame() {
         DrawRectangleRec(player.rect, BLUE);
     }
 
-    DrawText(TextFormat("Score: %d", player.score), SCREEN_WIDTH/2 - MeasureText(TextFormat("Score: %d", player.score), 40)/2, 15, 40, WHITE);
+    char scoreText[64];
+    sprintf(scoreText, "%d", player.score);
+    int scoreFontSize = 35;
+    Vector2 scoreSize = MeasureTextEx(GetFontDefault(), scoreText, scoreFontSize, 2);
+    
+    float baseY = 42;
+    float scoreImageX = 0;
+    float scoreImageWidth = 0;
+    float scoreImageHeight = 0;
+    
+    if (scoreTexture.id != 0) {
+        float scale = 170.0f / (float)scoreTexture.height;
+        scoreImageWidth = (float)scoreTexture.width * scale;
+        scoreImageHeight = (float)scoreTexture.height * scale;
+    }
+    
+    float centerY = baseY + scoreSize.y / 2.0f;
+    float scoreImageY = centerY - scoreImageHeight / 2.0f;
+    float scoreTextY = baseY - 7;
+    float spacing = -57.1f;
+    float offsetX = 25.0f;
+    float scoreOffsetX = 22.0f;
+    float numberOffsetX = 31.0f;
+    scoreImageX = SCREEN_WIDTH / 2.0f - scoreImageWidth / 2.0f - offsetX + scoreOffsetX;
+    float scoreValueX = scoreImageX + scoreImageWidth + spacing - numberOffsetX;
+    
+    if (scoreTexture.id != 0) {
+        Rectangle sourceRect = {0, 0, (float)scoreTexture.width, (float)scoreTexture.height};
+        Rectangle destRect = {scoreImageX, scoreImageY, scoreImageWidth, scoreImageHeight};
+        DrawTexturePro(scoreTexture, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
+    }
+    
+    DrawText(scoreText, scoreValueX, scoreTextY, scoreFontSize, (Color){255, 255, 255, 255});
 
     if (heartTexture.id) {
-        float scale = 0.06f;
+        float scale = 0.075f;
         float size = heartTexture.width * scale;
-        float space = size + 12;
-        float startX = (SCREEN_WIDTH - (player.lives * space - 12)) / 2;
+        float space = size - 22;
+        float heartOffsetX = 19.0f;
+        float heartY = 90.0f;
+        float startX = (SCREEN_WIDTH - (player.lives * space - 3)) / 2 - heartOffsetX;
         for (int i = 0; i < player.lives; ++i) {
-            DrawTextureEx(heartTexture, {startX + i*space, 70}, 0, scale, WHITE);
+            DrawTextureEx(heartTexture, {startX + i*space, heartY}, 0, scale, WHITE);
         }
     } else {
         for (int i = 0; i < player.lives; ++i) {
@@ -280,26 +389,69 @@ void DrawGame() {
 
     if (newWaveTimer > 0.0f) {
         float alpha = newWaveTimer;
-        Color waveColor = Fade(WHITE, alpha);
         const char* text = "NEW WAVE!";
-        int fontSize = 60;
-        int textWidth = MeasureText(text, fontSize);
-        DrawText(text, SCREEN_WIDTH/2 - textWidth/2, SCREEN_HEIGHT/2 - 100, fontSize, waveColor);
+        int fontSize = 64;
+        Vector2 textSize = MeasureTextEx(GetFontDefault(), text, fontSize, 3);
+        Vector2 textPos = {
+            SCREEN_WIDTH / 2.0f - textSize.x / 2,
+            SCREEN_HEIGHT / 2.0f - 120
+        };
+        
+        for (int i = 0; i < 8; i++) {
+            Color glowColor = {
+                100, 200, 255,
+                (unsigned char)(alpha * (100 - i * 10))
+            };
+            DrawText(text, textPos.x + i, textPos.y + i, fontSize, glowColor);
+        }
+        
+        Color waveColor = {
+            150, 220, 255,
+            (unsigned char)(alpha * 255)
+        };
+        DrawText(text, textPos.x, textPos.y, fontSize, waveColor);
     }
 }
 
 void DrawGameOver() {
-    ClearBackground(BLACK);
-
+    if (menuBackground.id != 0) {
+        DrawTexturePro(menuBackground,
+                      (Rectangle){0, 0, (float)menuBackground.width, (float)menuBackground.height},
+                      (Rectangle){0, 0, SCREEN_WIDTH, SCREEN_HEIGHT},
+                      (Vector2){0, 0}, 0.0f, WHITE);
+    } else {
+        Color darkBlue = {15, 20, 35, 255};
+        Color darkerBlue = {5, 10, 20, 255};
+        
+        for (int i = 0; i < SCREEN_HEIGHT; i++) {
+            float ratio = (float)i / SCREEN_HEIGHT;
+            Color color = {
+                (unsigned char)(darkBlue.r + (darkerBlue.r - darkBlue.r) * ratio),
+                (unsigned char)(darkBlue.g + (darkerBlue.g - darkBlue.g) * ratio),
+                (unsigned char)(darkBlue.b + (darkerBlue.b - darkBlue.b) * ratio),
+                255
+            };
+            DrawLine(0, i, SCREEN_WIDTH, i, color);
+        }
+    }
+    
     if (gameOverTexture.id) {
-        float scale = (SCREEN_HEIGHT * 0.5f) / gameOverTexture.height;
-        Vector2 pos = {(SCREEN_WIDTH - gameOverTexture.width * scale) / 2.0f, 100.0f};
+        float scale = (SCREEN_HEIGHT * 0.7f) / gameOverTexture.height;
+        Vector2 pos = {(SCREEN_WIDTH - gameOverTexture.width * scale) / 2.0f, -23.0f};
         DrawTextureEx(gameOverTexture, pos, 0.0f, scale, WHITE);
     }
 
-    DrawText(TextFormat("FINAL SCORE: %d", player.score),
-             SCREEN_WIDTH / 2 - MeasureText(TextFormat("FINAL SCORE: %d", player.score), 50) / 2,
-             320, 50, RAYWHITE);
+    char scoreText[64];
+    sprintf(scoreText, "%d", player.score);
+    int scoreFontSize = 48;
+    Vector2 scoreSize = MeasureTextEx(GetFontDefault(), scoreText, scoreFontSize, 2);
+    Vector2 scorePos = {
+        SCREEN_WIDTH / 2.0f - scoreSize.x / 2,
+        220
+    };
+    
+    DrawText(scoreText, scorePos.x + 3, scorePos.y + 3, scoreFontSize, (Color){0, 0, 0, 150});
+    DrawText(scoreText, scorePos.x, scorePos.y, scoreFontSize, WHITE);
 
     static bool scoreSaved = false; 
 
@@ -322,25 +474,45 @@ void DrawGameOver() {
         DrawText("NEW HIGH SCORE!", SCREEN_WIDTH / 2 - MeasureText("NEW HIGH SCORE!", 44) / 2, 260, 44, Fade(WHITE, t));
     }
 
-    const char* menuText = "Back to Menu";
-    const char* exitText = "Exit Game";
-    int fontSize = 30;
-    int menuWidth = MeasureText(menuText, fontSize);
-    int exitWidth = MeasureText(exitText, fontSize);
-    int menuX = SCREEN_WIDTH / 2 - menuWidth / 2;
-    int menuY = 480;
-    int exitX = SCREEN_WIDTH / 2 - exitWidth / 2;
-    int exitY = 520;
+    const float backToMenuScale = 2.0f;
+    const float exitScale = 1.72f;
+    const float backToMenuY = 375.0f;
+    const float exitY = 475.0f;
+    const float baseButtonWidth = 240.0f;
+    const float baseButtonHeight = 60.0f;
+    
+    Rectangle menuBtn = {SCREEN_WIDTH / 2.0f - (baseButtonWidth * backToMenuScale) / 2.0f, backToMenuY, baseButtonWidth * backToMenuScale, baseButtonHeight * backToMenuScale};
+    Rectangle exitBtn = {SCREEN_WIDTH / 2.0f - (baseButtonWidth * exitScale) / 2.0f, exitY, baseButtonWidth * exitScale, baseButtonHeight * exitScale};
 
     Vector2 mousePos = GetMousePosition();
-    bool mouseOverMenu = CheckCollisionPointRec(mousePos, (Rectangle){(float)menuX, (float)menuY, (float)menuWidth, (float)fontSize});
-    bool mouseOverExit = CheckCollisionPointRec(mousePos, (Rectangle){(float)exitX, (float)exitY, (float)exitWidth, (float)fontSize});
+    bool mouseOverMenu = CheckCollisionPointRec(mousePos, menuBtn);
+    bool mouseOverExit = CheckCollisionPointRec(mousePos, exitBtn);
 
-    Color menuColor = mouseOverMenu ? WHITE : GRAY;
-    Color exitColor = mouseOverExit ? WHITE : GRAY;
-
-    DrawText(menuText, menuX, menuY, fontSize, menuColor);
-    DrawText(exitText, exitX, exitY, fontSize, exitColor);
+    if (backToMenuButtonTexture.id) {
+        float menuScale = (menuBtn.height / (float)backToMenuButtonTexture.height) * backToMenuScale;
+        float menuWidth = backToMenuButtonTexture.width * menuScale;
+        float menuHeight = backToMenuButtonTexture.height * menuScale;
+        Vector2 menuPos = {
+            menuBtn.x + (menuBtn.width - menuWidth) / 2.0f,
+            menuBtn.y + (menuBtn.height - menuHeight) / 2.0f
+        };
+        DrawTextureEx(backToMenuButtonTexture, menuPos, 0.0f, menuScale, mouseOverMenu ? (Color){255, 255, 255, 255} : (Color){255, 255, 255, 230});
+    } else {
+        DrawStyledButton("Back to Menu", menuBtn, mouseOverMenu, (Color){50, 150, 200, 255}, 32);
+    }
+    
+    if (exitButtonTexture.id) {
+        float exitTextureScale = (exitBtn.height / (float)exitButtonTexture.height) * exitScale;
+        float exitWidth = exitButtonTexture.width * exitTextureScale;
+        float exitHeight = exitButtonTexture.height * exitTextureScale;
+        Vector2 exitPos = {
+            exitBtn.x + (exitBtn.width - exitWidth) / 2.0f,
+            exitBtn.y + (exitBtn.height - exitHeight) / 2.0f
+        };
+        DrawTextureEx(exitButtonTexture, exitPos, 0.0f, exitTextureScale, mouseOverExit ? (Color){255, 255, 255, 255} : (Color){255, 255, 255, 230});
+    } else {
+        DrawStyledButton("Exit Game", exitBtn, mouseOverExit, (Color){200, 60, 60, 255}, 32);
+    }
 
     if (IsKeyPressed(KEY_SPACE)) {
         scoreSaved = false; 
