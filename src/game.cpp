@@ -471,7 +471,7 @@ void DrawGameOver() {
 
     if (player.score >= highScores[0] && player.score > 0) {
         float t = (sinf(GetTime() * 7.0f) + 1.0f) * 0.5f;
-        DrawText("NEW HIGH SCORE!", SCREEN_WIDTH / 2 - MeasureText("NEW HIGH SCORE!", 44) / 2, 260, 44, Fade(WHITE, t));
+        DrawText("NEW HIGH SCORE!", SCREEN_WIDTH / 2 - MeasureText("NEW HIGH SCORE!", 44) / 2, 335, 44, Fade(WHITE, t));
     }
 
     const float backToMenuScale = 2.0f;
